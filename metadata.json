@@ -1,0 +1,7 @@
+{
+  "name": "Chef Aiva - Cook, Converse, Discover",
+  "description": "An AI companion for food: sourcing, cooking, and sharing healthy recipes. Explore meal plans, get instant recipe help, or discover new ingredients.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

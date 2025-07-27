@@ -1,7 +1,6 @@
 
 
 import React, { useState, useEffect } from 'react';
-import { GoogleGenAI } from "@google/genai";
 import type { Meal } from '../types';
 import Header from './Header';
 import Footer from './Footer';
@@ -42,33 +41,28 @@ const CookingView: React.FC<CookingViewProps> = ({ meal, instructionIndex, onNex
             setImageError(null);
             setStepImageUrl(null);
 
-             if (!process.env.API_KEY) {
-                setImageError('API key is not configured.');
-                setIsImageLoading(false);
-                return;
-            }
-
             try {
-                const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-                const response = await ai.models.generateImages({
-                    model: 'imagen-3.0-generate-002',
-                    prompt: `A vibrant, clear, high-quality photograph showing the result of this cooking step for a plant-based recipe called "${meal.name}": "${currentInstruction.description}". The setting is a clean, modern kitchen. The focus is on the food. The lighting is bright and natural.`,
-                    config: {
-                      numberOfImages: 1,
-                      outputMimeType: 'image/jpeg',
-                      aspectRatio: '4:3',
-                    },
+                const prompt = `A vibrant, clear, high-quality photograph showing the result of this cooking step for a plant-based recipe called "${meal.name}": "${currentInstruction.description}". The setting is a clean, modern kitchen. The focus is on the food. The lighting is bright and natural.`;
+                const response = await fetch('/api/generate-image', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt, aspectRatio: '4:3' }),
                 });
 
-                if (response.generatedImages && response.generatedImages.length > 0) {
-                    const base64ImageBytes = response.generatedImages[0].image.imageBytes;
-                    setStepImageUrl(`data:image/jpeg;base64,${base64ImageBytes}`);
+                if (!response.ok) {
+                    throw new Error(`Server error: ${response.statusText}`);
+                }
+
+                const { imageUrl } = await response.json();
+                
+                if (imageUrl) {
+                    setStepImageUrl(imageUrl);
                 } else {
                     setImageError('Could not generate an image for this step.');
                 }
-            } catch (e) {
+            } catch (e: any) {
                 console.error(e);
-                setImageError('Failed to generate image for step.');
+                setImageError(`Failed to generate image for step. ${e.message}`);
             } finally {
                 setIsImageLoading(false);
             }

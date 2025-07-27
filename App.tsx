@@ -17,7 +17,6 @@ import CookingView from './components/CookingView';
 import RecipeCompletePage from './components/RecipeCompletePage';
 import InstantRecipePage from './components/InstantRecipePage';
 import LoadFromUrlPage from './components/LoadFromUrlPage';
-import { GoogleGenAI, Type } from "@google/genai";
 import type { UserPreferences, MealPlan, Meal } from './types';
 
 type View = 'landing' | 'cook' | 'converse' | 'discover' | 'mealPlanSetup';
@@ -94,90 +93,28 @@ const App: React.FC = () => {
     }
   };
 
-  const mealSchema = {
-    type: Type.OBJECT,
-    properties: {
-      name: { type: Type.STRING, description: 'Creative name of the meal.' },
-      ingredients: { type: Type.ARRAY, items: { type: Type.STRING }, description: 'List of ingredients used.' },
-      instructions: { 
-          type: Type.ARRAY,
-          description: 'A list of cooking instruction steps.',
-          items: {
-              type: Type.OBJECT,
-              properties: {
-                  description: { type: Type.STRING, description: 'A single step of the recipe instructions.' }
-              },
-              required: ['description']
-          }
-      },
-    },
-    required: ['name', 'ingredients', 'instructions']
-  };
-
   const handleCreatePlan = async () => {
     setSetupPage('loading');
     setLoadingMessage({title: 'Chef Aiva is thinking...', message: 'Creating your delicious meal plan!'});
     setError(null);
 
-    const prompt = `
-      You are Chef Aiva, an expert AI nutritionist and chef specializing in creating delicious, healthy, plant-based meal plans.
-      Create a personalized 7-day meal plan for one person based on the following preferences and available ingredients.
-
-      User Preferences:
-      - Meals Per Week: ${preferences.mealsPerWeek}
-      - Max Cooking Time Per Meal: ${preferences.cookingTime} minutes
-      - Health Goals: ${preferences.healthGoals.join(', ') || 'None'}
-      - Dietary Needs: ${preferences.dietaryNeeds.join(', ') || 'None'}
-      - Health Focus Areas: ${preferences.healthFocus.join(', ') || 'None'}
-
-      Available Ingredients:
-      - ${selectedIngredientNames.join(', ')}
-
-      Instructions:
-      1. The meal plan must cover 7 days (Monday to Sunday).
-      2. For each meal, provide a creative recipe name, a list of ingredients (using ONLY from the provided "Available Ingredients" list), and structured step-by-step preparation instructions. Each instruction step should be a distinct object in an array.
-      3. Strictly adhere to the user's dietary needs and health focus.
-      4. Ensure the recipes are plant-based.
-      5. Return the response in the specified JSON format.
-    `;
-
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              weeklyPlan: {
-                type: Type.ARRAY,
-                description: 'A 7-day meal plan.',
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    day: { type: Type.STRING, description: 'Day of the week (e.g., Monday).' },
-                    breakfast: { ...mealSchema, nullable: true },
-                    lunch: { ...mealSchema, nullable: true },
-                    dinner: { ...mealSchema, nullable: true },
-                  },
-                  required: ['day', 'breakfast', 'lunch', 'dinner']
-                }
-              }
-            },
-            required: ['weeklyPlan']
-          }
-        }
+      const response = await fetch('/api/create-meal-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferences, ingredients: selectedIngredientNames }),
       });
+
+      if (!response.ok) {
+        throw new Error(`Server error: ${response.statusText}`);
+      }
       
-      const responseText = response.text.trim();
-      const generatedPlan = JSON.parse(responseText);
+      const generatedPlan = await response.json();
       setMealPlan(generatedPlan);
       setSetupPage('mealplan');
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      setError('Sorry, I had trouble creating your meal plan. Please try again.');
+      setError(`Sorry, I had trouble creating your meal plan. ${e.message}`);
       setSetupPage('planning');
     }
   };
@@ -187,35 +124,23 @@ const App: React.FC = () => {
     setLoadingMessage({title: 'Working my magic...', message: 'Creating a unique recipe just for you!'});
     setError(null);
     
-    const prompt = `
-      You are Chef Aiva, an expert AI nutritionist and chef specializing in creating delicious, healthy, plant-based meal plans.
-      Based on the user's request, create a single, creative, plant-based recipe.
-      
-      User Request: "${userPrompt}"
-
-      Instructions:
-      1. Provide a creative recipe name, a list of ingredients, and structured step-by-step preparation instructions. Each instruction step should be a distinct object in an array.
-      2. Ensure the recipes are plant-based.
-      3. Return the response in the specified JSON format.
-    `;
-
     try {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: mealSchema
-            }
+        const response = await fetch('/api/generate-recipe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt: userPrompt }),
         });
-        const responseText = response.text.trim();
-        const generatedMeal = JSON.parse(responseText);
+
+        if (!response.ok) {
+            throw new Error(`Server error: ${response.statusText}`);
+        }
+
+        const generatedMeal = await response.json();
         setSelectedMeal(generatedMeal);
         setHomeView('recipe');
-    } catch(e) {
+    } catch(e: any) {
         console.error(e);
-        setError('Sorry, I had trouble creating a recipe. Please try a different prompt.');
+        setError(`Sorry, I had trouble creating a recipe. Please try a different prompt. ${e.message}`);
         setHomeView('instantRecipe');
     }
   };
@@ -225,33 +150,23 @@ const App: React.FC = () => {
     setLoadingMessage({title: 'Working my magic...', message: 'Analyzing the recipe from the URL!'});
     setError(null);
     
-    const prompt = `
-      You are Chef Aiva, an expert AI nutritionist and chef.
-      A user has provided a URL: "${url}". While you cannot access external websites, infer the recipe from the URL and generate a plausible, delicious, plant-based recipe that would likely be found there.
-      
-      Instructions:
-      1. Create a recipe name, a list of ingredients, and structured step-by-step preparation instructions based on the URL's likely content.
-      2. For example, if the URL is "allrecipes.com/recipe/creamy-tomato-pasta", create a plant-based version of Creamy Tomato Pasta.
-      3. Return the response in the specified JSON format.
-    `;
-
     try {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: mealSchema
-            }
+        const response = await fetch('/api/parse-recipe-from-url', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url }),
         });
-        const responseText = response.text.trim();
-        const generatedMeal = JSON.parse(responseText);
+        
+        if (!response.ok) {
+            throw new Error(`Server error: ${response.statusText}`);
+        }
+
+        const generatedMeal = await response.json();
         setSelectedMeal(generatedMeal);
         setHomeView('recipe');
-    } catch(e) {
+    } catch(e: any) {
         console.error(e);
-        setError('Sorry, I had trouble parsing that URL. Please try a different one.');
+        setError(`Sorry, I had trouble parsing that URL. Please try a different one. ${e.message}`);
         setHomeView('loadFromUrl');
     }
   };
@@ -315,8 +230,8 @@ const App: React.FC = () => {
             return <LoadingSpinner title={loadingMessage.title} message={loadingMessage.message} />
         case 'mealplan':
             return (
-                 <>
-                    <div className="h-full overflow-y-auto">
+                <div className="flex flex-col h-full">
+                    <div className="flex-grow overflow-y-auto">
                         <div className="px-4 pt-6 pb-4">
                              <Header
                                 title="Your Meal Plan"
@@ -326,7 +241,7 @@ const App: React.FC = () => {
                              {mealPlan ? <MealPlanPage plan={mealPlan} onSelectMeal={(meal) => { setSelectedMeal(meal); setHomeView('recipe'); }} /> : <p className="text-center text-gray-500 p-8">No meal plan available. Go to "Build Meal Plan" to create one!</p>}
                         </div>
                     </div>
-                </>
+                </div>
             );
         case 'recipe':
             if (!selectedMeal) return null;
@@ -366,9 +281,9 @@ const App: React.FC = () => {
     switch(setupPage) {
       case 'grocery':
         return (
-          <>
-            <div className="h-full overflow-y-auto">
-              <div className="px-4 pt-6 pb-32">
+          <div className="flex flex-col h-full">
+            <div className="flex-grow overflow-y-auto">
+              <div className="px-4 pt-6 pb-4">
                 <Header
                   step={1}
                   title="Build Your Store"
@@ -402,27 +317,25 @@ const App: React.FC = () => {
                 </main>
               </div>
             </div>
-            <div className="absolute bottom-0 left-0 right-0">
-              <Footer>
-                  <p className="text-base font-medium text-gray-700">
-                    <span className="font-bold text-emerald-600">{selectedIngredients.size}</span> Ingredients
-                  </p>
-                  <button
-                      className="bg-emerald-600 text-white font-bold py-3 px-6 rounded-lg shadow-md hover:bg-emerald-700 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:bg-gray-400 disabled:cursor-not-allowed text-base"
-                      disabled={selectedIngredients.size === 0}
-                      onClick={() => setSetupPage('planning')}
-                  >
-                      Save & Continue
-                  </button>
-              </Footer>
-            </div>
-          </>
+            <Footer>
+                <p className="text-base font-medium text-gray-700">
+                  <span className="font-bold text-emerald-600">{selectedIngredients.size}</span> Ingredients
+                </p>
+                <button
+                    className="bg-emerald-600 text-white font-bold py-3 px-6 rounded-lg shadow-md hover:bg-emerald-700 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:bg-gray-400 disabled:cursor-not-allowed text-base"
+                    disabled={selectedIngredients.size === 0}
+                    onClick={() => setSetupPage('planning')}
+                >
+                    Save & Continue
+                </button>
+            </Footer>
+          </div>
         );
       case 'planning':
         return (
-          <>
-            <div className="h-full overflow-y-auto">
-              <div className="px-4 pt-6 pb-32">
+          <div className="flex flex-col h-full">
+            <div className="flex-grow overflow-y-auto">
+              <div className="px-4 pt-6 pb-4">
                 <Header
                   step={2}
                   title="Your Preferences"
@@ -433,26 +346,24 @@ const App: React.FC = () => {
                 <MealPlanForm preferences={preferences} setPreferences={setPreferences} />
               </div>
             </div>
-            <div className="absolute bottom-0 left-0 right-0">
-              <Footer>
-                <div />
-                <button
-                    className="bg-emerald-600 text-white font-bold py-3 px-6 rounded-lg shadow-md hover:bg-emerald-700 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:bg-gray-400 disabled:cursor-not-allowed text-base"
-                    onClick={handleCreatePlan}
-                >
-                    Create My Plan
-                </button>
-              </Footer>
-            </div>
-          </>
+            <Footer>
+              <div />
+              <button
+                  className="bg-emerald-600 text-white font-bold py-3 px-6 rounded-lg shadow-md hover:bg-emerald-700 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:bg-gray-400 disabled:cursor-not-allowed text-base"
+                  onClick={handleCreatePlan}
+              >
+                  Create My Plan
+              </button>
+            </Footer>
+          </div>
         );
       case 'loading':
         return <LoadingSpinner title={loadingMessage.title} message={loadingMessage.message} />;
       case 'mealplan':
         return (
-           <>
-            <div className="h-full overflow-y-auto">
-              <div className="px-4 pt-6 pb-32">
+           <div className="flex flex-col h-full">
+            <div className="flex-grow overflow-y-auto">
+              <div className="px-4 pt-6 pb-4">
                 <Header
                   step={3}
                   title="Your Meal Plan"
@@ -462,26 +373,24 @@ const App: React.FC = () => {
                 {mealPlan ? <MealPlanPage plan={mealPlan} onSelectMeal={() => {}} /> : <p>No meal plan generated.</p>}
               </div>
             </div>
-            <div className="absolute bottom-0 left-0 right-0">
-              <Footer>
-                <div/>
-                <div className="flex items-center gap-2">
-                  <button
-                    className="bg-gray-300 text-gray-500 font-bold py-3 px-6 rounded-lg cursor-not-allowed text-base"
-                    disabled
-                  >
-                    Make Changes
-                  </button>
-                  <button
-                    className="bg-emerald-600 text-white font-bold py-3 px-6 rounded-lg shadow-md hover:bg-emerald-700 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 text-base"
-                    onClick={handleConfirmMeals}
-                  >
-                    Confirm Meals
-                  </button>
-                </div>
-              </Footer>
-            </div>
-          </>
+            <Footer>
+              <div/>
+              <div className="flex items-center gap-2">
+                <button
+                  className="bg-gray-300 text-gray-500 font-bold py-3 px-6 rounded-lg cursor-not-allowed text-base"
+                  disabled
+                >
+                  Make Changes
+                </button>
+                <button
+                  className="bg-emerald-600 text-white font-bold py-3 px-6 rounded-lg shadow-md hover:bg-emerald-700 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 text-base"
+                  onClick={handleConfirmMeals}
+                >
+                  Confirm Meals
+                </button>
+              </div>
+            </Footer>
+          </div>
         );
     }
   }
@@ -510,10 +419,8 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="font-sans text-gray-900 flex items-center justify-center p-4 min-h-screen">
-      <div className="w-full max-w-[420px] h-[850px] bg-[#FDFCFB] shadow-2xl overflow-hidden relative border-[12px] border-black">
-        {renderContent()}
-      </div>
+    <div className="w-full max-w-md mx-auto flex flex-col h-full bg-[#FDFCFB] shadow-lg">
+      {renderContent()}
     </div>
   );
 };

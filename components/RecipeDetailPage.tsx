@@ -1,6 +1,6 @@
 
+
 import React, { useState, useEffect } from 'react';
-import { GoogleGenAI } from "@google/genai";
 import type { Meal } from '../types';
 import Header from './Header';
 import Footer from './Footer';
@@ -32,34 +32,30 @@ const RecipeDetailPage: React.FC<RecipeDetailPageProps> = ({ meal, onBack, onSta
 
     useEffect(() => {
         const generateImage = async () => {
-            if (!process.env.API_KEY) {
-                setError('API key is not configured.');
-                setIsLoading(false);
-                return;
-            }
             setIsLoading(true);
             setError(null);
             try {
-                const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-                const response = await ai.models.generateImages({
-                    model: 'imagen-3.0-generate-002',
-                    prompt: `A vibrant, appetizing, high-quality photograph of "${meal.name}". The dish is beautifully plated on a clean, modern ceramic plate, looks delicious, and is clearly plant-based. The lighting is bright and natural.`,
-                    config: {
-                      numberOfImages: 1,
-                      outputMimeType: 'image/jpeg',
-                      aspectRatio: '16:9',
-                    },
+                const prompt = `A vibrant, appetizing, high-quality photograph of "${meal.name}". The dish is beautifully plated on a clean, modern ceramic plate, looks delicious, and is clearly plant-based. The lighting is bright and natural.`;
+                const response = await fetch('/api/generate-image', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt, aspectRatio: '16:9' }),
                 });
 
-                if (response.generatedImages && response.generatedImages.length > 0) {
-                    const base64ImageBytes = response.generatedImages[0].image.imageBytes;
-                    setImageUrl(`data:image/jpeg;base64,${base64ImageBytes}`);
+                if (!response.ok) {
+                    throw new Error(`Server error: ${response.statusText}`);
+                }
+                
+                const { imageUrl } = await response.json();
+
+                if (imageUrl) {
+                    setImageUrl(imageUrl);
                 } else {
                     setError('Could not generate an image for this meal.');
                 }
-            } catch (e) {
+            } catch (e: any) {
                 console.error(e);
-                setError('Failed to generate meal image.');
+                setError(`Failed to generate meal image. ${e.message}`);
             } finally {
                 setIsLoading(false);
             }

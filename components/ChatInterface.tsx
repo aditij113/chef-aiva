@@ -1,8 +1,8 @@
 
 
 import React, { useState, useRef, useEffect } from 'react';
-import { GoogleGenAI, Chat } from "@google/genai";
 import type { ChatMessage } from '../types';
+import type { Part } from '@google/genai';
 
 const suggestedPrompts = [
     "What's a good substitute for parsley?",
@@ -11,17 +11,21 @@ const suggestedPrompts = [
     "Is this avocado ripe?",
 ];
 
-// Helper function to convert a File to a GoogleGenerativeAI.Part
-async function fileToGenerativePart(file: File) {
-    const base64EncodedDataPromise = new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
-        reader.readAsDataURL(file);
+// Helper function to convert a File to a base64 string for JSON transport
+async function fileToBase64(file: File): Promise<{ mimeType: string, data: string }> {
+    const reader = new FileReader();
+    const promise = new Promise<{ mimeType: string, data: string }>((resolve, reject) => {
+        reader.onerror = reject;
+        reader.onload = () => {
+            const result = reader.result as string;
+            const data = result.split(',')[1];
+            resolve({ mimeType: file.type, data });
+        };
     });
-    return {
-        inlineData: { data: await base64EncodedDataPromise, mimeType: file.type },
-    };
+    reader.readAsDataURL(file);
+    return promise;
 }
+
 
 interface ChatInterfaceProps {
     systemInstruction: string;
@@ -29,7 +33,6 @@ interface ChatInterfaceProps {
 }
 
 const ChatInterface: React.FC<ChatInterfaceProps> = ({ systemInstruction, showSuggestions = true }) => {
-    const [chat, setChat] = useState<Chat | null>(null);
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [inputText, setInputText] = useState('');
     const [selectedImage, setSelectedImage] = useState<File | null>(null);
@@ -37,18 +40,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ systemInstruction, showSu
     const [isLoading, setIsLoading] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        if (!process.env.API_KEY) return;
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        const chatSession = ai.chats.create({
-            model: 'gemini-2.5-flash',
-            config: {
-                systemInstruction: systemInstruction,
-            }
-        });
-        setChat(chatSession);
-    }, [systemInstruction]);
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -63,41 +54,64 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ systemInstruction, showSu
     };
 
     const handleSendMessage = async (prompt: string) => {
-        if ((!prompt.trim() && !selectedImage) || isLoading || !chat) return;
+        if ((!prompt.trim() && !selectedImage) || isLoading) return;
 
         setIsLoading(true);
         const userMessageText = prompt.trim();
 
         // Add user message to UI
         setMessages(prev => [...prev, { role: 'user', text: userMessageText, imageUrl: imagePreview }]);
-
         setInputText('');
         
         try {
-            const parts = [];
+            const messageParts: Part[] = [];
             if (selectedImage) {
-                const imagePart = await fileToGenerativePart(selectedImage);
-                parts.push(imagePart);
+                const { mimeType, data } = await fileToBase64(selectedImage);
+                messageParts.push({ inlineData: { mimeType, data } });
             }
             if (userMessageText) {
-                parts.push({ text: userMessageText });
+                messageParts.push({ text: userMessageText });
             }
-
+            
             // Clear image after preparing parts
             setSelectedImage(null);
             setImagePreview(null);
+            
+            // Construct history for the API
+            const history = messages.map(msg => ({
+                role: msg.role,
+                parts: [{ text: msg.text }] // Simplified for this example; a real app might need to handle images in history
+            }));
 
-            const stream = await chat.sendMessageStream({ message: parts });
+            const response = await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    history,
+                    message: messageParts,
+                    systemInstruction
+                }),
+            });
+
+            if (!response.body) {
+                throw new Error("No response body");
+            }
 
             // Add empty model message to start populating
             setMessages(prev => [...prev, { role: 'model', text: '' }]);
 
-            for await (const chunk of stream) {
-                const chunkText = chunk.text;
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+
+                const chunkText = decoder.decode(value);
                 setMessages(prev => {
                     const newMessages = [...prev];
                     const lastMessage = newMessages[newMessages.length - 1];
-                    if (lastMessage) {
+                    if (lastMessage && lastMessage.role === 'model') {
                         lastMessage.text += chunkText;
                     }
                     return newMessages;

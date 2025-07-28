@@ -14,7 +14,7 @@ export default async function handler(request: Request) {
 
     try {
         if (!process.env.API_KEY) {
-            throw new Error("API_KEY environment variable was not set.");
+            throw new Error("API_KEY environment variable is not set.");
         }
 
         const { history, message, systemInstruction } = (await request.json()) as ChatRequestBody;

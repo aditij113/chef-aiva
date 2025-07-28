@@ -1,5 +1,4 @@
 
-import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI, Type } from "@google/genai";
 
 const mealSchema = {
@@ -22,9 +21,9 @@ const mealSchema = {
     required: ['name', 'ingredients', 'instructions']
 };
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-    if (req.method !== 'POST') {
-        return res.status(405).json({ error: 'Method Not Allowed' });
+export default async function handler(request: Request) {
+    if (request.method !== 'POST') {
+        return new Response('Method Not Allowed', { status: 405 });
     }
 
     try {
@@ -32,10 +31,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             throw new Error("API_KEY environment variable is not set.");
         }
 
-        const { prompt: userPrompt } = req.body;
+        const { prompt: userPrompt } = await request.json();
 
         if (!userPrompt) {
-            return res.status(400).json({ error: 'Prompt is required.' });
+            return new Response(JSON.stringify({ error: 'Prompt is required.' }), { status: 400 });
         }
 
         const prompt = `
@@ -63,10 +62,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const responseText = response.text.trim();
         const generatedMeal = JSON.parse(responseText);
         
-        return res.status(200).json(generatedMeal);
+        return new Response(JSON.stringify(generatedMeal), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+        });
 
     } catch (error: any) {
         console.error('Error generating recipe:', error);
-        return res.status(500).json({ error: error.message });
+        return new Response(JSON.stringify({ error: error.message }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' },
+        });
     }
 }

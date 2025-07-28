@@ -1,12 +1,11 @@
 
-import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI } from "@google/genai";
 
 type AspectRatio = "1:1" | "16:9" | "9:16" | "4:3" | "3:4";
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-    if (req.method !== 'POST') {
-        return res.status(405).json({ error: 'Method Not Allowed' });
+export default async function handler(request: Request) {
+    if (request.method !== 'POST') {
+        return new Response('Method Not Allowed', { status: 405 });
     }
 
     try {
@@ -14,10 +13,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             throw new Error("API_KEY environment variable is not set.");
         }
 
-        const { prompt, aspectRatio = '16:9' } = req.body as { prompt: string; aspectRatio?: AspectRatio };
+        const { prompt, aspectRatio = '16:9' } = (await request.json()) as { prompt: string; aspectRatio?: AspectRatio };
         
         if (!prompt) {
-            return res.status(400).json({ error: 'Prompt is required.' });
+            return new Response(JSON.stringify({ error: 'Prompt is required.' }), { status: 400 });
         }
 
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
@@ -37,10 +36,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             imageUrl = `data:image/jpeg;base64,${base64ImageBytes}`;
         }
 
-        return res.status(200).json({ imageUrl });
+        return new Response(JSON.stringify({ imageUrl }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+        });
 
     } catch (error: any) {
         console.error('Error generating image:', error);
-        return res.status(500).json({ error: error.message });
+        return new Response(JSON.stringify({ error: error.message }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' },
+        });
     }
 }

@@ -1,5 +1,4 @@
 
-import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI, Chat, Part } from "@google/genai";
 
 interface ChatRequestBody {
@@ -8,9 +7,9 @@ interface ChatRequestBody {
     systemInstruction: string;
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-    if (req.method !== 'POST') {
-        return res.status(405).json({ error: 'Method Not Allowed' });
+export default async function handler(request: Request) {
+    if (request.method !== 'POST') {
+        return new Response('Method Not Allowed', { status: 405 });
     }
 
     try {
@@ -18,10 +17,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             throw new Error("API_KEY environment variable is not set.");
         }
 
-        const { history, message, systemInstruction } = req.body as ChatRequestBody;
+        const { history, message, systemInstruction } = (await request.json()) as ChatRequestBody;
         
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
         
+        // Start a new chat session with the provided history and system instruction
         const chat: Chat = ai.chats.create({
             model: 'gemini-2.5-flash',
             history: history,
@@ -30,33 +30,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             },
         });
 
+        // Get the streaming response from the model
         const stream = await chat.sendMessageStream({ message });
         
-        // Set headers for streaming
-        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-        res.setHeader('Transfer-Encoding', 'chunked');
-
-        // Pipe the stream to the response
-        for await (const chunk of stream) {
-            const chunkText = chunk.text;
-            if (chunkText) {
-                res.write(chunkText);
+        // Create a new ReadableStream to send back to the client
+        const responseStream = new ReadableStream({
+            async start(controller) {
+                try {
+                    for await (const chunk of stream) {
+                        const chunkText = chunk.text;
+                        if (chunkText) {
+                            controller.enqueue(new TextEncoder().encode(chunkText));
+                        }
+                    }
+                } catch(err: any) {
+                    console.error('Error during stream processing:', err);
+                    controller.error(err);
+                } finally {
+                    controller.close();
+                }
             }
-        }
-        
-        // End the response when the stream is done
-        res.end();
+        });
+
+        return new Response(responseStream, {
+            headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+        });
 
     } catch (error: any) {
         console.error('Chat API error:', error);
-        // If an error occurs before streaming starts, we can send a JSON error.
-        // If it happens during, the connection might already be established.
-        if (!res.headersSent) {
-            res.status(500).json({ error: error.message });
-        } else {
-            // If headers are already sent, we can't send a JSON error.
-            // We just end the response. The client will see a broken stream.
-            res.end();
-        }
+        return new Response(JSON.stringify({ error: error.message }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' },
+        });
     }
 }

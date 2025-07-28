@@ -1,4 +1,5 @@
 
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI, Type } from "@google/genai";
 import type { UserPreferences } from "../types";
 
@@ -22,23 +23,17 @@ const mealSchema = {
     required: ['name', 'ingredients', 'instructions']
 };
 
-export default async function handler(request: Request) {
-    console.log("Meal plan function invoked.");
-
-    if (request.method !== 'POST') {
-        console.error("Method Not Allowed.");
-        return new Response('Method Not Allowed', { status: 405 });
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+    if (req.method !== 'POST') {
+        return res.status(405).json({ error: 'Method Not Allowed' });
     }
 
     try {
         if (!process.env.API_KEY) {
-            console.error("API_KEY environment variable is not set.");
             throw new Error("API_KEY environment variable is not set.");
         }
-        console.log("API Key found.");
 
-        const { preferences, ingredients } = (await request.json()) as { preferences: UserPreferences; ingredients: string[] };
-        console.log("Request body parsed successfully.");
+        const { preferences, ingredients } = req.body as { preferences: UserPreferences; ingredients: string[] };
 
         const prompt = `
           You are Chef Aiva, an expert AI nutritionist and chef specializing in creating delicious, healthy, plant-based meal plans.
@@ -62,10 +57,8 @@ export default async function handler(request: Request) {
           5. Return the response in the specified JSON format.
         `;
         
-        console.log("Prompt constructed. Initializing GoogleGenAI.");
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
         
-        console.log("Making generateContent call to Gemini...");
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: prompt,
@@ -94,27 +87,16 @@ export default async function handler(request: Request) {
             }
         });
         
-        console.log("Received response from Gemini.");
         const responseText = response.text.trim();
-        
-        console.log("Parsing JSON response.");
         const generatedPlan = JSON.parse(responseText);
         
-        console.log("Successfully generated and parsed meal plan. Sending response.");
-        return new Response(JSON.stringify(generatedPlan), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-        });
+        return res.status(200).json(generatedPlan);
 
     } catch (error: any) {
-        // Log the entire error object for more details
-        console.error('Full error object:', error);
-        return new Response(JSON.stringify({ 
+        console.error('Create Meal Plan Error:', error);
+        return res.status(500).json({ 
             error: 'An error occurred while generating the meal plan.',
             details: error.message 
-        }), {
-            status: 500,
-            headers: { 'Content-Type': 'application/json' },
         });
     }
 }

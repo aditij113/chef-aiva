@@ -1,8 +1,0 @@
-{
-  "name": "chef-aiva",
-  "version": "1.0.0",
-  "description": "Chef Aiva - Your AI Kitchen Companion",
-  "dependencies": {
-    "@google/genai": "^0.12.0"
-  }
-}

@@ -22,20 +22,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
         const response = await ai.models.generateImages({
             model: 'imagen-3.0-generate-002',
-            prompt: prompt,
+            prompt,
             config: {
                 numberOfImages: 1,
                 outputMimeType: 'image/jpeg',
-                aspectRatio: aspectRatio,
+                aspectRatio,
             },
         });
 
-        let imageUrl = null;
-        if (response.generatedImages && response.generatedImages.length > 0) {
-            const base64ImageBytes = response.generatedImages[0].image.imageBytes;
-            imageUrl = `data:image/jpeg;base64,${base64ImageBytes}`;
+        if (!response.generatedImages || response.generatedImages.length === 0) {
+            throw new Error('Image generation returned no results. Check your API key, model access, and account quota.');
         }
 
+        const imageBytes = response.generatedImages[0]?.image?.imageBytes;
+        if (!imageBytes) {
+            throw new Error('Image generation succeeded but returned no image bytes. Verify API access and model output format.');
+        }
+
+        const imageUrl = `data:image/jpeg;base64,${imageBytes}`;
         return res.status(200).json({ imageUrl });
 
     } catch (error: any) {

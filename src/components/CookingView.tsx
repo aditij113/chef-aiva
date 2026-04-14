@@ -13,6 +13,18 @@ const ImageSpinner: React.FC = () => (
   </div>
 );
 
+const ImageFallback: React.FC<{ message: string }> = ({ message }) => (
+  <div className="flex flex-col items-center justify-center h-full bg-gray-100 text-gray-600 p-5 text-center">
+    <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-white border border-gray-200 shadow-sm">
+      <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4 5h16M4 19h16M5 9l3 3-3 3M16 9l3 3-3 3" />
+      </svg>
+    </div>
+    <p className="font-semibold text-gray-800">{message}</p>
+    <p className="text-sm text-gray-500 mt-2">Try refreshing or check your API configuration.</p>
+  </div>
+);
+
 interface CookingViewProps {
     meal: Meal;
     instructionIndex: number;
@@ -92,8 +104,11 @@ const CookingView: React.FC<CookingViewProps> = ({ meal, instructionIndex, onNex
             <main className="flex-1 flex flex-col justify-center items-center text-center p-4">
                 <div className="w-full h-56 bg-gray-200 rounded-lg mb-6 overflow-hidden shadow-lg">
                     {isImageLoading && <ImageSpinner />}
-                    {imageError && <div className="flex items-center justify-center h-full bg-red-100 text-red-600 p-4 text-center">{imageError}</div>}
-                    {stepImageUrl && <img src={stepImageUrl} alt={`A generated image for step ${instructionIndex + 1}`} className="w-full h-full object-cover" />}
+                    {!isImageLoading && (stepImageUrl ? (
+                        <img src={stepImageUrl} alt={`A generated image for step ${instructionIndex + 1}`} className="w-full h-full object-cover" />
+                    ) : (
+                        <ImageFallback message={imageError ?? 'No image preview available for this step.'} />
+                    ))}
                 </div>
                 
                 <p className="text-3xl md:text-4xl font-display font-bold text-gray-800 leading-tight">

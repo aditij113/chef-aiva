@@ -21,7 +21,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
         const response = await ai.models.generateImages({
-            model: 'imagen-4-fast',
+            model: 'gemini-3.1-flash-image-preview',
             prompt,
             config: {
                 numberOfImages: 1,
